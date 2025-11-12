@@ -41,6 +41,9 @@ class EcologicalCycleGame {
         this.birdCount = 0;
         this.birdPoopCount = 0;
 
+        // Upgrade beam state
+        this.upgradeBeam = null;
+
         // Timing
         this.lastTime = Date.now();
         this.deltaTime = 0;
@@ -205,42 +208,39 @@ class EcologicalCycleGame {
     }
 
     showUpgradeBeam() {
-        // Upgrade beam effect
-        const beamWidth = 100;
-        const beamHeight = 300;
-
-        let beamActive = true;
-        const beamStart = Date.now();
-        const beamDuration = 2000;
-
-        const drawBeam = () => {
-            if (!beamActive) {
-                this.completeGrassUpgrade();
-                return;
-            }
-
-            const elapsed = Date.now() - beamStart;
-            if (elapsed >= beamDuration) {
-                beamActive = false;
-                return;
-            }
-
-            requestAnimationFrame(drawBeam);
+        // Create upgrade beam state
+        this.upgradeBeam = {
+            x: this.grass.x,
+            y: this.grass.y,
+            width: 120,
+            height: 400,
+            startTime: Date.now(),
+            duration: 2000
         };
 
-        drawBeam();
+        // Screen flash
+        AnimationEffects.screenFlash(this.ctx, this.width, this.height, '#FFFF00', 300);
 
         // Particles burst
-        this.particleSystem.emitBurst(this.grass.x, this.grass.y, 'star', 30, {
+        this.particleSystem.emitBurst(this.grass.x, this.grass.y, 'star', 50, {
             maxLife: 2000,
-            size: 15,
-            speed: 5,
-            gravity: -0.02,
+            size: 20,
+            speed: 6,
+            gravity: -0.05,
             color: '#FFD700'
         });
 
         // Success burst
         AnimationEffects.successBurst(this.particleSystem, this.grass.x, this.grass.y - 100);
+
+        // Ground shake for impact
+        this.screenShake(5, 500);
+
+        // Complete upgrade after beam duration
+        setTimeout(() => {
+            this.upgradeBeam = null;
+            this.completeGrassUpgrade();
+        }, 2000);
     }
 
     completeGrassUpgrade() {
@@ -251,9 +251,40 @@ class EcologicalCycleGame {
             // Upgrade grass
             this.grass.upgrade();
 
-            // Scale animation
-            this.grass.scale = 0.5;
-            this.animationManager.addTween(this.grass, 'scale', 1, 800, 'easeOutElastic');
+            // Dramatic scale animation - grow from small to large
+            this.grass.scale = 0.3;
+            this.animationManager.addTween(this.grass, 'scale', 1.2, 600, 'easeOutElastic', () => {
+                // Settle to normal size
+                this.animationManager.addTween(this.grass, 'scale', 1, 400, 'easeInOutCubic');
+            });
+
+            // Flash the grass
+            AnimationEffects.pulse(this.grass, 1.3, 200);
+
+            // More particle celebration
+            for (let i = 0; i < 20; i++) {
+                setTimeout(() => {
+                    this.particleSystem.emit(
+                        this.grass.x + Utils.random(-60, 60),
+                        this.grass.y - Utils.random(20, 80),
+                        Utils.randomChoice(['star', 'heart', 'sparkle']),
+                        {
+                            maxLife: 1500,
+                            size: Utils.random(8, 15),
+                            vx: Utils.random(-2, 2),
+                            vy: Utils.random(-3, -1),
+                            gravity: 0.05,
+                            color: Utils.randomChoice(['#90EE90', '#32CD32', '#FFD700', '#00FF00'])
+                        }
+                    );
+                }, i * 50);
+            }
+
+            // Visual feedback - grass glows briefly
+            this.grass.setGlowing(true);
+            setTimeout(() => {
+                if (this.grass) this.grass.setGlowing(false);
+            }, 1000);
         } else {
             // Transform into tree
             this.transformToTree();
@@ -919,6 +950,11 @@ class EcologicalCycleGame {
         // Draw birds
         this.birds.forEach(bird => bird.draw(this.ctx));
 
+        // Draw upgrade beam if active
+        if (this.upgradeBeam) {
+            this.drawUpgradeBeam();
+        }
+
         // Draw particles (foreground)
         this.particleSystem.draw(this.ctx);
     }
@@ -994,6 +1030,110 @@ class EcologicalCycleGame {
             this.ctx.arc(x, y, size, 0, Math.PI * 2);
             this.ctx.fill();
         }
+    }
+
+    drawUpgradeBeam() {
+        const elapsed = Date.now() - this.upgradeBeam.startTime;
+        const progress = elapsed / this.upgradeBeam.duration;
+
+        if (progress >= 1) return;
+
+        const opacity = Math.sin(progress * Math.PI); // Fade in and out
+        const pulsePhase = Math.sin(elapsed / 100) * 0.1 + 0.9;
+
+        const beam = this.upgradeBeam;
+        const ctx = this.ctx;
+
+        ctx.save();
+        ctx.globalAlpha = opacity * 0.8;
+
+        // Outer glow layer (widest, most transparent)
+        const outerGradient = ctx.createLinearGradient(
+            beam.x, beam.y,
+            beam.x, beam.y - beam.height
+        );
+        outerGradient.addColorStop(0, 'rgba(255, 255, 150, 0.9)');
+        outerGradient.addColorStop(0.3, 'rgba(255, 220, 100, 0.7)');
+        outerGradient.addColorStop(0.7, 'rgba(255, 255, 200, 0.4)');
+        outerGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+
+        ctx.fillStyle = outerGradient;
+        ctx.fillRect(
+            beam.x - beam.width / 2 * pulsePhase - 30,
+            beam.y - beam.height,
+            beam.width * pulsePhase + 60,
+            beam.height
+        );
+
+        // Middle beam layer (medium width)
+        const middleGradient = ctx.createLinearGradient(
+            beam.x, beam.y,
+            beam.x, beam.y - beam.height
+        );
+        middleGradient.addColorStop(0, 'rgba(255, 255, 200, 1)');
+        middleGradient.addColorStop(0.4, 'rgba(255, 235, 150, 0.9)');
+        middleGradient.addColorStop(0.8, 'rgba(255, 255, 255, 0.5)');
+        middleGradient.addColorStop(1, 'rgba(255, 255, 255, 0.1)');
+
+        ctx.fillStyle = middleGradient;
+        ctx.fillRect(
+            beam.x - beam.width / 2 * pulsePhase,
+            beam.y - beam.height,
+            beam.width * pulsePhase,
+            beam.height
+        );
+
+        // Inner core (brightest, narrow)
+        const innerGradient = ctx.createLinearGradient(
+            beam.x, beam.y,
+            beam.x, beam.y - beam.height
+        );
+        innerGradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+        innerGradient.addColorStop(0.3, 'rgba(255, 255, 220, 1)');
+        innerGradient.addColorStop(0.7, 'rgba(255, 255, 200, 0.7)');
+        innerGradient.addColorStop(1, 'rgba(255, 255, 255, 0.2)');
+
+        ctx.fillStyle = innerGradient;
+        ctx.fillRect(
+            beam.x - beam.width / 4 * pulsePhase,
+            beam.y - beam.height,
+            beam.width / 2 * pulsePhase,
+            beam.height
+        );
+
+        // Add sparkles along the beam
+        for (let i = 0; i < 10; i++) {
+            const sparkleY = beam.y - (i / 10) * beam.height;
+            const sparklePhase = (elapsed / 100 + i) % (Math.PI * 2);
+            const sparkleSize = 3 + Math.sin(sparklePhase) * 2;
+            const sparkleX = beam.x + Math.sin(sparklePhase * 2) * (beam.width / 4);
+
+            ctx.fillStyle = `rgba(255, 255, 255, ${0.5 + Math.sin(sparklePhase) * 0.5})`;
+            ctx.beginPath();
+            ctx.arc(sparkleX, sparkleY, sparkleSize, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        ctx.restore();
+
+        // Ground impact effect
+        ctx.save();
+        ctx.globalAlpha = opacity * 0.6;
+        const impactGradient = ctx.createRadialGradient(
+            beam.x, beam.y,
+            0,
+            beam.x, beam.y,
+            beam.width * 1.5
+        );
+        impactGradient.addColorStop(0, 'rgba(255, 255, 200, 0.8)');
+        impactGradient.addColorStop(0.5, 'rgba(255, 220, 100, 0.4)');
+        impactGradient.addColorStop(1, 'rgba(255, 200, 0, 0)');
+
+        ctx.fillStyle = impactGradient;
+        ctx.beginPath();
+        ctx.arc(beam.x, beam.y, beam.width * 1.5 * pulsePhase, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
     }
 
     gameLoop() {
